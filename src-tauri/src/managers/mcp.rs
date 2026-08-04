@@ -115,8 +115,9 @@ fn persistent_token(app: &AppHandle) -> String {
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
 /// Puerto preferido del servidor MCP. Fijo para que la configuración del
-/// agente (`claude mcp add ... --url http://127.0.0.1:5151/mcp`) sobreviva a
-/// los reinicios de la app. Si está ocupado, se cae a un puerto efímero.
+/// agente (`claude mcp add --transport http --scope user escriba
+/// http://127.0.0.1:5151/mcp/<token>`) sobreviva a los reinicios de la app.
+/// Si está ocupado, se cae a un puerto efímero.
 const PREFERRED_PORT: u16 = 5151;
 
 pub struct McpServer {

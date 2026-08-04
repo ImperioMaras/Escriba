@@ -264,6 +264,45 @@ function App() {
     };
   }, [t]);
 
+  // "Tu tinta, en voz" donde no hay motor nativo (Windows y Linux no traen
+  // `say`): el backend emite el texto seleccionado y lo lee el webview, el
+  // mismo respaldo que Sesiones usa en ConversationSettings.speak().
+  //
+  // El toggle de parar se resuelve AQUÍ y no en Rust a propósito: el backend
+  // pregunta por `is_speaking_native()`, que solo ve sus propios motores y no
+  // tiene forma de saber que el webview está hablando. Si esto no estuviera,
+  // la segunda pulsación del atajo volvería a leer en vez de callar.
+  useEffect(() => {
+    const unlisten = listen<string>("read-selection-speak", (event) => {
+      if (!("speechSynthesis" in window)) return;
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(event.payload);
+      u.lang = i18n.language;
+      // SOLO voces locales, y es un filtro duro y no un criterio de orden:
+      // las "Online (Natural)" de Windows (Dalia, Elvira…) mandan el texto a
+      // los servidores de Microsoft. Leer así una selección del usuario
+      // rompería la promesa central de Escriba — nada sale del equipo — y
+      // encima fallaría sin red. Si no hay voz local del idioma preferimos la
+      // voz por defecto del sistema, que también es local, a costa del acento.
+      const base = i18n.language.split("-")[0].toLowerCase();
+      const voice = window.speechSynthesis
+        .getVoices()
+        .find(
+          (v) =>
+            v.localService &&
+            v.lang.toLowerCase().replace("_", "-").startsWith(base),
+        );
+      if (voice) u.voice = voice;
+      window.speechSynthesis.speak(u);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [i18n.language]);
+
   // Listen for model loading failures and show a toast
   useEffect(() => {
     const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {

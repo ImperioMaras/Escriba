@@ -1724,9 +1724,16 @@ impl ShortcutAction for ReadSelectionAction {
                     .flatten();
             match selection {
                 Some(text) => {
-                    // Voz del sistema (ganadora del A/B). v1 honesta: en
-                    // plataformas sin `say` aún no hay lectura de selección.
-                    let _ = crate::commands::conversation::speak_native(&ah, &text, "system").await;
+                    // Voz del sistema (ganadora del A/B) y, si esta plataforma
+                    // no tiene motor nativo (Windows y Linux no traen `say`),
+                    // el webview la lee con speechSynthesis: el MISMO respaldo
+                    // que Sesiones ya usa en `ConversationSettings.speak()`.
+                    // Antes este retorno se descartaba con `let _ =`, así que
+                    // fuera de macOS el atajo capturaba la selección y luego
+                    // no hacía absolutamente nada, en silencio.
+                    if !crate::commands::conversation::speak_native(&ah, &text, "system").await {
+                        let _ = ah.emit("read-selection-speak", text);
+                    }
                 }
                 None => {
                     debug!("read_selection: sin selección, nada que leer");

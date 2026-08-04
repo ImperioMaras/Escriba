@@ -47,7 +47,12 @@ const CLIENTS: ClientId[] = ["claude", "cursor", "vscode", "other"];
 function snippetFor(client: ClientId, url: string): string {
   switch (client) {
     case "claude":
-      return `claude mcp add escriba --transport http --url ${url}`;
+      // La URL va como argumento posicional: `claude mcp add [options] <name>
+      // <commandOrUrl>`. La opción `--url` no existe en el CLI (falla con
+      // "unknown option '--url'"). `--scope user` deja el servidor disponible
+      // en todos los proyectos; sin él, el CLI usa `local` y lo ata a la
+      // carpeta desde donde se ejecutó el comando.
+      return `claude mcp add --transport http --scope user escriba ${url}`;
     case "cursor":
       return `{
   "mcpServers": {
