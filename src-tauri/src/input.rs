@@ -35,6 +35,27 @@ pub fn send_copy_ctrl_c(enigo: &mut Enigo) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     let (modifier_key, c_key_code) = (Key::Control, Key::Unicode('c'));
 
+    // Soltar los modificadores del atajo ANTES de copiar. Este Ctrl+C se envía
+    // en el mismo instante en que el usuario todavía tiene apretadas las teclas
+    // del atajo que lo disparó (`alt+shift+r` por defecto), así que la ventana
+    // de destino no recibe Ctrl+C sino Ctrl+Alt+Shift+C, que no copia nada. La
+    // captura fallaba el 100% de las veces y dejaba mudos tanto read_selection
+    // como voice_edit, sin un solo error en el log: solo "no selection".
+    //
+    // Verificado en Windows: con la MISMA build, cambiar el atajo a una tecla
+    // sin modificadores (F9) hace que capture al primer intento. El pegado del
+    // dictado nunca sufrió esto porque ocurre segundos después, con el teclado
+    // ya libre.
+    //
+    // Se ignora el error de cada Release a propósito: soltar una tecla que no
+    // estaba apretada no es un fallo, y no hay forma de consultar el estado
+    // real del teclado desde aquí.
+    for held in [Key::Alt, Key::Shift, Key::Meta] {
+        let _ = enigo.key(held, enigo::Direction::Release);
+    }
+    // Respiro para que la ventana de destino procese los KEYUP antes del Ctrl+C.
+    std::thread::sleep(std::time::Duration::from_millis(40));
+
     enigo
         .key(modifier_key, enigo::Direction::Press)
         .map_err(|e| format!("Failed to press modifier key: {}", e))?;
