@@ -157,8 +157,27 @@ fn capture_selection(app: &AppHandle) -> Option<String> {
     if !sent {
         return None;
     }
-    std::thread::sleep(std::time::Duration::from_millis(180));
-    let captured = clipboard.read_text().unwrap_or_default();
+    // Sondeo hasta que el portapapeles cambie, en vez de una espera fija de
+    // 180 ms. El Ctrl+C viaja a OTRA aplicación, que tiene que atender el
+    // mensaje y escribir el portapapeles; cuánto tarda no depende de nosotros
+    // sino de lo cargada que esté la máquina. En un Windows con la memoria
+    // apretada (0,5 GB libres de 15,7 GB, paginando a disco) esos 180 ms se
+    // quedan cortos SIEMPRE y la captura falla el 100% de las veces, dejando
+    // mudas tanto la lectura en voz alta como voice_edit.
+    //
+    // Preguntar cada 50 ms mantiene la respuesta igual de rápida donde ya
+    // funcionaba y da margen donde no. El tope de 2 s solo se agota cuando de
+    // verdad no había selección, que es el caso en que igual no hay prisa.
+    let limite = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut captured = String::new();
+    while std::time::Instant::now() < limite {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let actual = clipboard.read_text().unwrap_or_default();
+        if !actual.is_empty() && actual != previous {
+            captured = actual;
+            break;
+        }
+    }
 
     // Restaurar SIEMPRE el clipboard del usuario (premortem PRP-003).
     let _ = clipboard.write_text(previous.clone());
