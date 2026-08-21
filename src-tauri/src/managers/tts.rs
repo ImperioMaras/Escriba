@@ -214,7 +214,14 @@ async fn download_verified(
 /// Extrae un .tar.bz2 con el tar del sistema (bsdtar de macOS trae bzip2).
 fn extract_tar_bz2(archive: &Path, dest_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
-    let status = Command::new("/usr/bin/tar")
+    // macOS: ruta absoluta (bsdtar con soporte bzip2 de fábrica). Windows 10
+    // 1803+/11 y Linux: "tar" resuelto por PATH (bsdtar/libarchive también
+    // trae bzip2 en Windows moderno).
+    #[cfg(target_os = "macos")]
+    let tar = "/usr/bin/tar";
+    #[cfg(not(target_os = "macos"))]
+    let tar = "tar";
+    let status = Command::new(tar)
         .arg("xjf")
         .arg(archive)
         .arg("-C")
@@ -229,6 +236,7 @@ fn extract_tar_bz2(archive: &Path, dest_dir: &Path) -> Result<(), String> {
 
 /// Re-firma ad-hoc el runtime extraído: macOS (arm64) mata con SIGKILL los
 /// binarios cuya firma no calza tras la descarga (verificado en el spike).
+#[cfg(target_os = "macos")]
 fn resign_runtime(runtime_dir: &Path) -> Result<(), String> {
     let _ = Command::new("/usr/bin/xattr")
         .arg("-cr")
