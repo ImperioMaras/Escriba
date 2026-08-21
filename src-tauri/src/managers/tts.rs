@@ -16,12 +16,26 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
-/// Release de sherpa-onnx PINNEADA (verificada 13-jul-2026). Actualizarla
-/// implica recalcular ambos SHA256; nunca usar "latest".
+#[cfg(target_os = "macos")]
 const RUNTIME_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-v1.13.4-osx-arm64-shared.tar.bz2";
+#[cfg(target_os = "macos")]
 const RUNTIME_SHA256: &str = "809ab5d0c77bd8f358364a244e6ab17f2afecf9779eb9fd436fa469c3ff5375c";
+#[cfg(target_os = "macos")]
 const RUNTIME_DIR: &str = "sherpa-onnx-v1.13.4-osx-arm64-shared";
+#[cfg(target_os = "macos")]
 const RUNTIME_SIZE: u64 = 27_044_587;
+
+/// Release de sherpa-onnx PINNEADA para Windows (mismo v1.13.4 que macOS,
+/// verificada 21-ago-2026 descargando el asset y calculando su SHA256 real).
+/// Actualizarla implica recalcular ambos valores; nunca usar "latest".
+#[cfg(windows)]
+const RUNTIME_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-v1.13.4-win-x64-shared-MD-Release.tar.bz2";
+#[cfg(windows)]
+const RUNTIME_SHA256: &str = "d4dacc8be5afe03f22ade4d50cfd587c03a625eaca8c41f2d99a24d3db463eab";
+#[cfg(windows)]
+const RUNTIME_DIR: &str = "sherpa-onnx-v1.13.4-win-x64-shared-MD-Release";
+#[cfg(windows)]
+const RUNTIME_SIZE: u64 = 20_034_576;
 
 /// Una voz Piper (empaquetada por sherpa-onnx con sus tokens y espeak-data),
 /// descargable bajo demanda con SHA256 pinneado.
