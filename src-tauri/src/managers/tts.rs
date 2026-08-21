@@ -271,10 +271,10 @@ pub async fn setup(app: &AppHandle) -> Result<(), String> {
 /// Igual que `setup`, pero para el idioma dado (voz del Intérprete). El
 /// runtime es compartido; solo cambia la voz que se baja.
 pub async fn setup_lang(app: &AppHandle, lang: &str) -> Result<(), String> {
-    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+    #[cfg(not(any(all(target_os = "macos", target_arch = "aarch64"), windows)))]
     {
         let _ = (app, lang);
-        return Err("La voz neural v1 es solo para macOS Apple Silicon".to_string());
+        return Err("La voz neural v1 es solo para macOS Apple Silicon y Windows x64".to_string());
     }
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
@@ -296,6 +296,41 @@ pub async fn setup_lang(app: &AppHandle, lang: &str) -> Result<(), String> {
             emit_progress(app, "extract", 0, 0, "Extrayendo runtime");
             extract_tar_bz2(&archive, &dir)?;
             resign_runtime(&dir.join(RUNTIME_DIR))?;
+            let _ = std::fs::remove_file(&archive);
+        }
+
+        if !voice_dir_named(app, voice.dir)?.join(voice.onnx).is_file() {
+            let archive = dir.join("voice.tar.bz2");
+            download_verified(app, "voice", voice.url, &archive, voice.sha256, voice.size).await?;
+            emit_progress(app, "extract", 0, 0, "Extrayendo voz");
+            extract_tar_bz2(&archive, &dir)?;
+            let _ = std::fs::remove_file(&archive);
+        }
+
+        info!("Voz neural lista (sherpa-onnx + {})", voice.dir);
+        emit_progress(app, "done", 0, 0, "Voz neural lista");
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        let voice = voice_for(lang).ok_or_else(|| "Idioma sin voz neural".to_string())?;
+        let dir = base_dir(app)?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+        if !tts_bin(app)?.is_file() {
+            let archive = dir.join("runtime.tar.bz2");
+            download_verified(
+                app,
+                "runtime",
+                RUNTIME_URL,
+                &archive,
+                RUNTIME_SHA256,
+                RUNTIME_SIZE,
+            )
+            .await?;
+            emit_progress(app, "extract", 0, 0, "Extrayendo runtime");
+            extract_tar_bz2(&archive, &dir)?;
+            // Sin resign_runtime: Windows no exige re-firma para ejecutar.
             let _ = std::fs::remove_file(&archive);
         }
 
