@@ -16,6 +16,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
+/// Release de sherpa-onnx PINNEADA (verificada 13-jul-2026). Actualizarla
+/// implica recalcular ambos SHA256; nunca usar "latest".
 #[cfg(target_os = "macos")]
 const RUNTIME_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-v1.13.4-osx-arm64-shared.tar.bz2";
 #[cfg(target_os = "macos")]
