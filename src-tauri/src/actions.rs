@@ -1722,7 +1722,8 @@ impl ShortcutAction for TranscribeAction {
 
 // Cancel Action
 /// "Tu tinta, en voz": lee la selección actual con la cascada nativa de voz
-/// (voz del sistema primero, como en Sesiones). Mismo atajo para detener:
+/// (voz neural Piper primero si está instalada, luego la del sistema, luego
+/// speechSynthesis — misma cascada de Sesiones). Mismo atajo para detener:
 /// si ya está leyendo, el toggle corta la lectura.
 struct ReadSelectionAction;
 
@@ -1750,7 +1751,7 @@ impl ShortcutAction for ReadSelectionAction {
                     // Antes este retorno se descartaba con `let _ =`, así que
                     // fuera de macOS el atajo capturaba la selección y luego
                     // no hacía absolutamente nada, en silencio.
-                    if !crate::commands::conversation::speak_native(&ah, &text, "system").await {
+                    if !crate::commands::conversation::speak_native(&ah, &text, "").await {
                         let _ = ah.emit("read-selection-speak", text);
                     }
                 }
