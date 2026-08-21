@@ -12,7 +12,9 @@ use log::info;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+#[cfg(target_os = "macos")]
+use std::process::Child;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
@@ -29,15 +31,35 @@ const RUNTIME_SIZE: u64 = 27_044_587;
 
 /// Release de sherpa-onnx PINNEADA para Windows (mismo v1.13.4 que macOS,
 /// verificada 21-ago-2026 descargando el asset y calculando su SHA256 real).
-/// Actualizarla implica recalcular ambos valores; nunca usar "latest".
-#[cfg(windows)]
+/// Actualizarla implica recalcular ambos valores; nunca usar "latest". Solo
+/// x64: el asset es x86_64, Windows ARM64 cae al guard de "no soportado" en
+/// `setup_lang` en vez de correr este binario bajo emulación.
+#[cfg(all(windows, target_arch = "x86_64"))]
 const RUNTIME_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-v1.13.4-win-x64-shared-MD-Release.tar.bz2";
-#[cfg(windows)]
+#[cfg(all(windows, target_arch = "x86_64"))]
 const RUNTIME_SHA256: &str = "d4dacc8be5afe03f22ade4d50cfd587c03a625eaca8c41f2d99a24d3db463eab";
-#[cfg(windows)]
+#[cfg(all(windows, target_arch = "x86_64"))]
 const RUNTIME_DIR: &str = "sherpa-onnx-v1.13.4-win-x64-shared-MD-Release";
-#[cfg(windows)]
+#[cfg(all(windows, target_arch = "x86_64"))]
 const RUNTIME_SIZE: u64 = 20_034_576;
+
+/// Linux y demás plataformas: no hay runtime pinneado todavía. `setup_lang`
+/// devuelve Err antes de necesitar este valor, pero `tts_bin()` (sin cfg)
+/// necesita el símbolo para poder compilar; `installed_lang` seguirá
+/// devolviendo false porque la ruta resultante nunca existe en disco.
+///
+/// El guard NO es `not(any(all(macos,aarch64), all(windows,x86_64)))` (el
+/// espejo exacto del guard de `setup_lang` más abajo) a propósito: el bloque
+/// macOS de arriba está gateado solo por `target_os = "macos"` (cualquier
+/// arch, incluida x86_64/Intel — sí se compila en CI, ver
+/// `pr-test-build.yml`/`build-test.yml`/`release.yml`), no por
+/// `all(macos, aarch64)`. Usar ese espejo exacto habría hecho que este
+/// respaldo TAMBIÉN se compilara en macOS x86_64 (porque `all(macos,aarch64)`
+/// es falso ahí), duplicando la definición de `RUNTIME_DIR` con el bloque de
+/// arriba (E0428) precisamente en esa combinación. Este guard es el
+/// complemento real de "algún bloque de arriba ya define RUNTIME_DIR".
+#[cfg(not(any(target_os = "macos", all(windows, target_arch = "x86_64"))))]
+const RUNTIME_DIR: &str = "sherpa-onnx-unsupported";
 
 /// Una voz Piper (empaquetada por sherpa-onnx con sus tokens y espeak-data),
 /// descargable bajo demanda con SHA256 pinneado.
@@ -282,7 +304,7 @@ pub async fn setup(app: &AppHandle) -> Result<(), String> {
 /// Igual que `setup`, pero para el idioma dado (voz del Intérprete). El
 /// runtime es compartido; solo cambia la voz que se baja.
 pub async fn setup_lang(app: &AppHandle, lang: &str) -> Result<(), String> {
-    #[cfg(not(any(all(target_os = "macos", target_arch = "aarch64"), windows)))]
+    #[cfg(not(any(all(target_os = "macos", target_arch = "aarch64"), all(windows, target_arch = "x86_64"))))]
     {
         let _ = (app, lang);
         return Err("La voz neural v1 es solo para macOS Apple Silicon y Windows x64".to_string());
@@ -322,7 +344,7 @@ pub async fn setup_lang(app: &AppHandle, lang: &str) -> Result<(), String> {
         emit_progress(app, "done", 0, 0, "Voz neural lista");
         Ok(())
     }
-    #[cfg(windows)]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     {
         let voice = voice_for(lang).ok_or_else(|| "Idioma sin voz neural".to_string())?;
         let dir = base_dir(app)?;
