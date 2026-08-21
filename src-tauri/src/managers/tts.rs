@@ -110,10 +110,11 @@ fn base_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn tts_bin(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(base_dir(app)?
-        .join(RUNTIME_DIR)
-        .join("bin")
-        .join("sherpa-onnx-offline-tts"))
+    #[cfg(windows)]
+    let bin_name = "sherpa-onnx-offline-tts.exe";
+    #[cfg(not(windows))]
+    let bin_name = "sherpa-onnx-offline-tts";
+    Ok(base_dir(app)?.join(RUNTIME_DIR).join("bin").join(bin_name))
 }
 
 fn voice_dir_named(app: &AppHandle, dir: &str) -> Result<PathBuf, String> {
