@@ -100,8 +100,13 @@ fn voice_for(lang: &str) -> Option<Voice> {
         .map(|(_, voice)| Voice { ..*voice })
 }
 
-/// Reproducción en curso (afplay): se corta antes de hablar de nuevo.
+/// Reproducción en curso: proceso `afplay` en macOS, sink de rodio en el
+/// resto (propio de este motor — no comparte estado con el sink del
+/// Intérprete en audio_feedback.rs, para poder cortar uno sin afectar al otro).
+#[cfg(target_os = "macos")]
 static PLAYING: Mutex<Option<Child>> = Mutex::new(None);
+#[cfg(not(target_os = "macos"))]
+static PLAYING: Mutex<Option<std::sync::Arc<rodio::Sink>>> = Mutex::new(None);
 
 fn base_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::portable::app_data_dir(app)
@@ -385,23 +390,49 @@ pub fn synth_to_wav(
 
 /// Sintetiza y reproduce (bloqueante en la síntesis, ~1-2.5 s). Llamar desde
 /// spawn_blocking. Corta cualquier reproducción anterior.
+///
+/// En macOS lanza `afplay` y regresa de inmediato (el audio sigue sonando en
+/// background; `stop()` lo corta). En el resto, reproducir con rodio exige
+/// mantener el `OutputStream` vivo mientras suena, así que esta rama SÍ
+/// bloquea hasta el final o hasta que otro hilo llama a `stop()` (mismo
+/// patrón que `audio_feedback::play_interpreter_voice`); como el llamador ya
+/// invoca esta función desde `spawn_blocking` (ver
+/// `commands/conversation.rs::speak_native`), no bloquea el runtime async.
 pub fn speak_blocking(app: &AppHandle, text: &str) -> Result<(), String> {
     let wav = base_dir(app)?.join("speak.wav");
 
     stop();
     synth_to_wav(app, text, "es", &wav)?;
 
-    let child = Command::new("/usr/bin/afplay")
-        .arg(&wav)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("No se pudo reproducir: {}", e))?;
-    *PLAYING.lock().unwrap() = Some(child);
+    #[cfg(target_os = "macos")]
+    {
+        let child = Command::new("/usr/bin/afplay")
+            .arg(&wav)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("No se pudo reproducir: {}", e))?;
+        *PLAYING.lock().unwrap() = Some(child);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use std::sync::Arc;
+        let stream_handle = rodio::OutputStreamBuilder::from_default_device()
+            .map_err(|e| e.to_string())?
+            .open_stream()
+            .map_err(|e| e.to_string())?;
+        let mixer = stream_handle.mixer();
+        let file = std::fs::File::open(&wav).map_err(|e| e.to_string())?;
+        let buf_reader = std::io::BufReader::new(file);
+        let sink = Arc::new(rodio::play(mixer, buf_reader).map_err(|e| e.to_string())?);
+        *PLAYING.lock().unwrap() = Some(Arc::clone(&sink));
+        sink.sleep_until_end();
+    }
     Ok(())
 }
 
 /// ¿Hay una reproducción de la voz incluida en curso?
+#[cfg(target_os = "macos")]
 pub fn is_playing() -> bool {
     if let Ok(mut guard) = PLAYING.lock() {
         if let Some(child) = guard.as_mut() {
@@ -416,12 +447,34 @@ pub fn is_playing() -> bool {
     false
 }
 
+/// ¿Hay una reproducción de la voz incluida en curso?
+#[cfg(not(target_os = "macos"))]
+pub fn is_playing() -> bool {
+    if let Ok(guard) = PLAYING.lock() {
+        if let Some(sink) = guard.as_ref() {
+            return !sink.empty();
+        }
+    }
+    false
+}
+
 /// Detiene la reproducción en curso (si la hay).
+#[cfg(target_os = "macos")]
 pub fn stop() {
     if let Ok(mut guard) = PLAYING.lock() {
         if let Some(mut child) = guard.take() {
             let _ = child.kill();
             let _ = child.wait();
+        }
+    }
+}
+
+/// Detiene la reproducción en curso (si la hay).
+#[cfg(not(target_os = "macos"))]
+pub fn stop() {
+    if let Ok(mut guard) = PLAYING.lock() {
+        if let Some(sink) = guard.take() {
+            sink.stop();
         }
     }
 }
