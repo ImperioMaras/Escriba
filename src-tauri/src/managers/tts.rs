@@ -226,11 +226,17 @@ fn extract_tar_bz2(archive: &Path, dest_dir: &Path) -> Result<(), String> {
     let tar = "/usr/bin/tar";
     #[cfg(not(target_os = "macos"))]
     let tar = "tar";
-    let status = Command::new(tar)
-        .arg("xjf")
-        .arg(archive)
-        .arg("-C")
-        .arg(dest_dir)
+    let mut cmd = Command::new(tar);
+    cmd.arg("xjf").arg(archive).arg("-C").arg(dest_dir);
+    // Windows abre una consola visible para cualquier proceso hijo de línea de
+    // comandos salvo que se pida lo contrario — sin esto, parpadeaba una
+    // ventana negra al instalar la voz neural.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let status = cmd
         .status()
         .map_err(|e| format!("No se pudo extraer: {}", e))?;
     if !status.success() {
@@ -366,8 +372,8 @@ pub fn synth_to_wav(
     let voice = voice_for(lang).ok_or_else(|| "Idioma sin voz neural".to_string())?;
     let bin = tts_bin(app)?;
     let dir = voice_dir_named(app, voice.dir)?;
-    let status = Command::new(&bin)
-        .arg(format!("--vits-model={}", dir.join(voice.onnx).display()))
+    let mut cmd = Command::new(&bin);
+    cmd.arg(format!("--vits-model={}", dir.join(voice.onnx).display()))
         .arg(format!(
             "--vits-tokens={}",
             dir.join("tokens.txt").display()
@@ -379,7 +385,16 @@ pub fn synth_to_wav(
         .arg(format!("--output-filename={}", out_path.display()))
         .arg(text)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    // Misma razón que en extract_tar_bz2: sin esto, cada lectura de voz abría
+    // una ventana de consola negra en Windows (confirmado por Alex en la
+    // primera verificación manual de Task 7).
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let status = cmd
         .status()
         .map_err(|e| format!("La síntesis falló: {}", e))?;
     if !status.success() || !out_path.is_file() {
